@@ -208,6 +208,11 @@ func (m Manager) GetAllSupportedLinterConfigs() []*linter.Config {
 		linter.NewConfig(golinters.NewWSL()).
 			WithPresets(linter.PresetStyle).
 			WithURL("https://github.com/bombsimon/wsl"),
+
+		linter.NewConfig(golinters.UnderscoreVisibility()).
+			WithPresets(linter.PresetStyle).
+			WithLoadForGoAnalysis().
+			WithURL("https://github.com/dbraley/underscore-visibility-linter"),
 	}
 
 	isLocalRun := os.Getenv("GOLANGCI_COM_RUN") == ""

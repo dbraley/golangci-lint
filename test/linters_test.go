@@ -131,12 +131,16 @@ func testOneSource(t *testing.T, sourcePath string) {
 			caseArgs = append(caseArgs, "-c", cfgPath)
 		}
 
-		caseArgs = append(caseArgs, sourcePath)
+		caseArgs = append(caseArgs, allTestFiles(sourcePath))
 
 		cmd := exec.Command(binName, caseArgs...)
 		t.Log(caseArgs)
 		runGoErrchk(cmd, []string{sourcePath}, t)
 	}
+}
+
+func allTestFiles(sourcePath string) string {
+	return strings.Replace(sourcePath, ".go", "*", 1)
 }
 
 type runContext struct {
