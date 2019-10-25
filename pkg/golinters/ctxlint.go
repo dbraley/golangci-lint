@@ -1,7 +1,7 @@
 package golinters
 
 import (
-	"github.com/dbraley/ctxlint"
+	"github.com/dbraley/ctxlint" // dont forget to run "go env -w GOPRIVATE=`GO env GOPRIVATE`,github.com/dbraley/ctxlint"
 	"github.com/golangci/golangci-lint/pkg/golinters/goanalysis"
 	"golang.org/x/tools/go/analysis"
 )
