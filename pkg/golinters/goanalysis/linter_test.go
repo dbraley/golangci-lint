@@ -57,6 +57,18 @@ func Test_buildIssues(t *testing.T) {
 		diags             []Diagnostic
 		linterNameBuilder func(diag *Diagnostic) string
 	}
+	basicFixes := []analysis.SuggestedFix{
+		{
+			Message: "Basic",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     0,
+					End:     0,
+					NewText: []byte("// Add comment to first line"),
+				},
+			},
+		},
+	}
 	tests := []struct {
 		name string
 		args args
@@ -121,6 +133,40 @@ func Test_buildIssues(t *testing.T) {
 				{
 					FromLinter: "some-linter",
 					Text:       "some-analyzer: failure message",
+				},
+			},
+		},
+		{
+			name: "Has basic suggested fix",
+			args: args{
+				diags: []Diagnostic{
+					{
+						Diagnostic: analysis.Diagnostic{
+							Message:        "failure message",
+							SuggestedFixes: basicFixes,
+						},
+						Analyzer: &analysis.Analyzer{
+							Name: "some-analyzer",
+						},
+						Position: token.Position{},
+						Pkg:      nil,
+					},
+				},
+				linterNameBuilder: func(*Diagnostic) string {
+					return "some-linter"
+				},
+			},
+			want: []result.Issue{
+				{
+					FromLinter: "some-linter",
+					Text:       "some-analyzer: failure message",
+					Replacement: &result.Replacement{
+						NeedOnlyDelete: false,
+						NewLines: []string{
+							"// Add comment to first line",
+							"",
+						},
+					},
 				},
 			},
 		},
