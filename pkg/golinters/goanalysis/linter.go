@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"go/token"
 	"runtime"
 	"sort"
 	"strings"
@@ -219,84 +220,91 @@ func buildIssuesFromErrorsForTypecheckMode(errs []error, lintCtx *linter.Context
 }
 
 type iDiagnostic interface {
-	get() *Diagnostic
+	fields() *Diagnostic
+	getPositionOf(token.Pos) token.Position
 }
 
-func (d *Diagnostic) get() *Diagnostic {
+func (d *Diagnostic) fields() *Diagnostic {
 	return d
+}
+
+func (d *Diagnostic) getPositionOf(p token.Pos) token.Position {
+	return d.Pkg.Fset.Position(p)
 }
 
 func buildIssues(diags []Diagnostic, linterNameBuilder func(diag *Diagnostic) string) []result.Issue {
 	var issues []result.Issue
 	for i := range diags {
 		diag := &diags[i]
-		linterName := linterNameBuilder(diag)
-		var text string
-		if diag.Analyzer.Name == linterName {
-			text = diag.Message
-		} else {
-			text = fmt.Sprintf("%s: %s", diag.Analyzer.Name, diag.Message)
-		}
-		if len(diag.SuggestedFixes) > 0 {
+		issues = append(issues, getIssuesForDiagnostic(diag, linterNameBuilder(diag))...)
+	}
+	return issues
+}
 
-			// Don't really have a better way of picking a best fix right now
-			chosenFix := diag.SuggestedFixes[0]
+func getIssuesForDiagnostic(diag iDiagnostic, linterName string) (issues []result.Issue) {
+	var text string
+	if diag.fields().Analyzer.Name == linterName {
+		text = diag.fields().Message
+	} else {
+		text = fmt.Sprintf("%s: %s", diag.fields().Analyzer.Name, diag.fields().Message)
+	}
+	if len(diag.fields().SuggestedFixes) > 0 {
 
-			// TODO: Should we log.info the chosenFix.Message?
+		// Don't really have a better way of picking a best fix right now
+		chosenFix := diag.fields().SuggestedFixes[0]
 
-			// Should result in one or more issue for each text edit, as
-			// fixer.go only applies one fix per issue
-			for _, edit := range chosenFix.TextEdits {
-				oPos := diag.Pkg.Fset.Position(edit.Pos)
-				oEnd := diag.Pkg.Fset.Position(edit.End)
+		// TODO: Should we log.info the chosenFix.Message?
 
-				// This only works if we're only replacing whole lines with brand new lines
-				if oPos.Column == 1 && oEnd.Column == 1 {
-					originalLineCount := oEnd.Line - oPos.Line + 1
-					newLines := strings.Split(string(edit.NewText), "\n")
+		// Should result in one or more issue for each text edit, as
+		// fixer.go only applies one fix per issue
+		for _, edit := range chosenFix.TextEdits {
+			oPos := diag.getPositionOf(edit.Pos)
+			oEnd := diag.getPositionOf(edit.End)
 
-					// if both end with newline, omit
-					if oEnd.Column == 1 && newLines[len(newLines)-1] == "" {
-						originalLineCount -= 1
-						newLines = newLines[:len(newLines)-1]
-					}
+			// This only works if we're only replacing whole lines with brand new lines
+			if oPos.Column == 1 && oEnd.Column == 1 {
+				originalLineCount := oEnd.Line - oPos.Line + 1
+				newLines := strings.Split(string(edit.NewText), "\n")
 
-					text = fmt.Sprintf("%s (%d -> %d)", text, originalLineCount, len(newLines))
-
-					issues = append(issues, result.Issue{
-						FromLinter: linterName,
-						Text:       text,
-						Pos:        diag.Position,
-						Pkg:        diag.Pkg,
-
-						SourceLines: nil,
-						Replacement: &result.Replacement{
-							NeedOnlyDelete: false,
-							NewLines:       newLines,
-						},
-						LineRange: &result.Range{
-							From: oPos.Line,
-							To:   oPos.Line + originalLineCount - 1,
-						},
-						HunkPos: 0,
-					})
-				} else {
-					issues = append(issues, result.Issue{
-						FromLinter: linterName,
-						Text:       text,
-						Pos:        diag.Position,
-						Pkg:        diag.Pkg,
-					})
+				// if both end with newline, omit
+				if oEnd.Column == 1 && newLines[len(newLines)-1] == "" {
+					originalLineCount -= 1
+					newLines = newLines[:len(newLines)-1]
 				}
+
+				issues = append(issues, result.Issue{
+					FromLinter: linterName,
+					Text:       text,
+					Pos:        diag.fields().Position,
+					Pkg:        diag.fields().Pkg,
+
+					SourceLines: nil,
+					Replacement: &result.Replacement{
+						NeedOnlyDelete: false,
+						NewLines:       newLines,
+					},
+					LineRange: &result.Range{
+						From: oPos.Line,
+						To:   oPos.Line + originalLineCount - 1,
+					},
+					HunkPos: 0,
+				})
+			} else {
+				issues = append(issues, result.Issue{
+					FromLinter: linterName,
+					Text:       text,
+					Pos:        diag.fields().Position,
+					Pkg:        diag.fields().Pkg,
+				})
 			}
-		} else {
-			issues = append(issues, result.Issue{
-				FromLinter: linterName,
-				Text:       text,
-				Pos:        diag.Position,
-				Pkg:        diag.Pkg,
-			})
 		}
+	} else {
+		issues = append(issues, result.Issue{
+			FromLinter: linterName,
+			Text:       text,
+			Pos:        diag.fields().Position,
+			Pkg:        diag.fields().Pkg,
+		})
 	}
 	return issues
 }
