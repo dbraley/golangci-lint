@@ -218,6 +218,14 @@ func buildIssuesFromErrorsForTypecheckMode(errs []error, lintCtx *linter.Context
 	return issues, nil
 }
 
+type iDiagnostic interface {
+	get() *Diagnostic
+}
+
+func (d *Diagnostic) get() *Diagnostic {
+	return d
+}
+
 func buildIssues(diags []Diagnostic, linterNameBuilder func(diag *Diagnostic) string) []result.Issue {
 	var issues []result.Issue
 	for i := range diags {
@@ -236,38 +244,51 @@ func buildIssues(diags []Diagnostic, linterNameBuilder func(diag *Diagnostic) st
 
 			// TODO: Should we log.info the chosenFix.Message?
 
+			// Should result in one or more issue for each text edit, as
+			// fixer.go only applies one fix per issue
 			for _, edit := range chosenFix.TextEdits {
 				oPos := diag.Pkg.Fset.Position(edit.Pos)
 				oEnd := diag.Pkg.Fset.Position(edit.End)
 
-				originalLineCount := oEnd.Line - oPos.Line + 1
-				newLines := strings.Split(string(edit.NewText), "\n")
+				// This only works if we're only replacing whole lines with brand new lines
+				if oPos.Column == 1 && oEnd.Column == 1 {
+					originalLineCount := oEnd.Line - oPos.Line + 1
+					newLines := strings.Split(string(edit.NewText), "\n")
 
-				// if both end with newline, omit
-				if oEnd.Column == 1 && newLines[len(newLines)-1] == "" {
-					originalLineCount -= 1
-					newLines = newLines[:len(newLines)-1]
+					// if both end with newline, omit
+					if oEnd.Column == 1 && newLines[len(newLines)-1] == "" {
+						originalLineCount -= 1
+						newLines = newLines[:len(newLines)-1]
+					}
+
+					text = fmt.Sprintf("%s (%d -> %d)", text, originalLineCount, len(newLines))
+
+					issues = append(issues, result.Issue{
+						FromLinter: linterName,
+						Text:       text,
+						Pos:        diag.Position,
+						Pkg:        diag.Pkg,
+
+						SourceLines: nil,
+						Replacement: &result.Replacement{
+							NeedOnlyDelete: false,
+							NewLines:       newLines,
+						},
+						LineRange: &result.Range{
+							From: oPos.Line,
+							To:   oPos.Line + originalLineCount - 1,
+						},
+						HunkPos: 0,
+					})
+				} else {
+					issues = append(issues, result.Issue{
+						FromLinter: linterName,
+						Text:       text,
+						Pos:        diag.Position,
+						Pkg:        diag.Pkg,
+					})
 				}
-
-				text = fmt.Sprintf("%s (%d -> %d)", text, originalLineCount, len(newLines))
-
-				//if originalLineCount == 1 {} // and is whole line
-				issues = append(issues, result.Issue{
-					FromLinter: linterName,
-					Text:       text,
-					Pos:        diag.Position,
-					Pkg:        diag.Pkg,
-
-					SourceLines: nil,
-					Replacement: &result.Replacement{
-						NeedOnlyDelete: false,
-						NewLines:       newLines,
-					},
-					LineRange: nil,
-					HunkPos:   0,
-				})
 			}
-
 		} else {
 			issues = append(issues, result.Issue{
 				FromLinter: linterName,
