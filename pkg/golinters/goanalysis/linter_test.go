@@ -188,6 +188,34 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 			},
 		},
 		{
+			name: "Shows issue when suggested edits exist but has no TextEdits",
+			args: args{
+				diag: &Diagnostic{
+					Diagnostic: analysis.Diagnostic{
+						Message: "failure message",
+						SuggestedFixes: []analysis.SuggestedFix{
+							{
+								Message:   "fix something",
+								TextEdits: []analysis.TextEdit{},
+							},
+						},
+					},
+					Analyzer: &analysis.Analyzer{
+						Name: "some-analyzer",
+					},
+					Position: token.Position{},
+					Pkg:      nil,
+				},
+				linterName: "some-linter",
+			},
+			wantIssues: []result.Issue{
+				{
+					FromLinter: "some-linter",
+					Text:       "some-analyzer: failure message",
+				},
+			},
+		},
+		{
 			name: "Replace Whole Line",
 			args: args{
 				diag:       &MockedIDiagnostic{},
@@ -277,7 +305,6 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 				m.On("getPositionOf", posEquals(151)).Return(token.Position{Line: 5, Column: 10})
 			},
 		},
-		// TODO: TDD 1 suggested fix, no text edits!
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
