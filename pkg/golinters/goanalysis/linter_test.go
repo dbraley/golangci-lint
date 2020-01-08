@@ -58,18 +58,6 @@ func Test_buildIssues(t *testing.T) {
 		diags             []Diagnostic
 		linterNameBuilder func(diag *Diagnostic) string
 	}
-	//basicFixes := []analysis.SuggestedFix{
-	//	{
-	//		Message: "Basic",
-	//		TextEdits: []analysis.TextEdit{
-	//			{
-	//				Pos:     0,
-	//				End:     0,
-	//				NewText: []byte("// Add comment to first line"),
-	//			},
-	//		},
-	//	},
-	//}
 	tests := []struct {
 		name string
 		args args
@@ -111,66 +99,6 @@ func Test_buildIssues(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "Linter Name is NOT Analyzer Name",
-			args: args{
-				diags: []Diagnostic{
-					{
-						Diagnostic: analysis.Diagnostic{
-							Message: "failure message",
-						},
-						Analyzer: &analysis.Analyzer{
-							Name: "some-analyzer",
-						},
-						Position: token.Position{},
-						Pkg:      nil,
-					},
-				},
-				linterNameBuilder: func(*Diagnostic) string {
-					return "some-linter"
-				},
-			},
-			want: []result.Issue{
-				{
-					FromLinter: "some-linter",
-					Text:       "some-analyzer: failure message",
-				},
-			},
-		},
-		//{
-		//	name: "Has basic suggested fix",
-		//	args: args{
-		//		diags: []Diagnostic{
-		//			{
-		//				Diagnostic: analysis.Diagnostic{
-		//					Message:        "failure message",
-		//					SuggestedFixes: basicFixes,
-		//				},
-		//				Analyzer: &analysis.Analyzer{
-		//					Name: "some-analyzer",
-		//				},
-		//				Position: token.Position{},
-		//				Pkg:      nil,
-		//			},
-		//		},
-		//		linterNameBuilder: func(*Diagnostic) string {
-		//			return "some-linter"
-		//		},
-		//	},
-		//	want: []result.Issue{
-		//		{
-		//			FromLinter: "some-linter",
-		//			Text:       "some-analyzer: failure message",
-		//			Replacement: &result.Replacement{
-		//				NeedOnlyDelete: false,
-		//				NewLines: []string{
-		//					"// Add comment to first line",
-		//					"",
-		//				},
-		//			},
-		//		},
-		//	},
-		//},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -183,7 +111,6 @@ func Test_buildIssues(t *testing.T) {
 
 type MockedIDiagnostic struct {
 	mock.Mock
-	Diagnostic
 }
 
 func (m *MockedIDiagnostic) fields() *Diagnostic {
@@ -191,10 +118,16 @@ func (m *MockedIDiagnostic) fields() *Diagnostic {
 	return args.Get(0).(*Diagnostic)
 }
 
-func (m *MockedIDiagnostic) getPositionOf(token.Pos) token.Position {
-	args := m.Called()
+func (m *MockedIDiagnostic) getPositionOf(p token.Pos) token.Position {
+	args := m.Called(p)
 	return args.Get(0).(token.Position)
 
+}
+
+func posEquals(expected token.Pos) interface{} {
+	return mock.MatchedBy(func(pos token.Pos) bool {
+		return pos == expected
+	})
 }
 
 func Test_getIssuesForDiagnostic(t *testing.T) {
@@ -202,7 +135,6 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 		diag       iDiagnostic
 		linterName string
 	}
-	noMockInteractions := func(*MockedIDiagnostic) {}
 	tests := []struct {
 		name       string
 		args       args
@@ -232,7 +164,6 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 					Text:       "failure message",
 				},
 			},
-			prepare: noMockInteractions,
 		},
 		{
 			name: "Linter Name is NOT Analyzer Name",
@@ -255,10 +186,9 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 					Text:       "some-analyzer: failure message",
 				},
 			},
-			prepare: noMockInteractions,
 		},
 		{
-			name: "With Mock",
+			name: "Replace Whole Line",
 			args: args{
 				diag:       &MockedIDiagnostic{},
 				linterName: "some-linter",
@@ -267,12 +197,34 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 				{
 					FromLinter: "some-linter",
 					Text:       "some-analyzer: failure message",
+					LineRange: &result.Range{
+						From: 5,
+						To:   5,
+					},
+					Replacement: &result.Replacement{
+						NeedOnlyDelete: false,
+						NewLines: []string{
+							"// Some comment to fix",
+						},
+					},
 				},
 			},
 			prepare: func(m *MockedIDiagnostic) {
 				d := &Diagnostic{
 					Diagnostic: analysis.Diagnostic{
 						Message: "failure message",
+						SuggestedFixes: []analysis.SuggestedFix{
+							{
+								Message: "fix something",
+								TextEdits: []analysis.TextEdit{
+									{
+										Pos:     101,
+										End:     201,
+										NewText: []byte("// Some comment to fix\n"),
+									},
+								},
+							},
+						},
 					},
 					Analyzer: &analysis.Analyzer{
 						Name: "some-analyzer",
@@ -281,8 +233,11 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 					Pkg:      nil,
 				}
 				m.On("fields").Return(d)
+				m.On("getPositionOf", posEquals(101)).Return(token.Position{Line: 5, Column: 1})
+				m.On("getPositionOf", posEquals(201)).Return(token.Position{Line: 6, Column: 1})
 			},
 		},
+		// TODO: TDD 1 suggested fix, no text edits!
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
