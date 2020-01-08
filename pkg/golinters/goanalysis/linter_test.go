@@ -237,6 +237,46 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 				m.On("getPositionOf", posEquals(201)).Return(token.Position{Line: 6, Column: 1})
 			},
 		},
+		{
+			name: "Excludes Replacement if TextEdit doesn't modify only whole lines",
+			args: args{
+				diag:       &MockedIDiagnostic{},
+				linterName: "some-linter",
+			},
+			wantIssues: []result.Issue{
+				{
+					FromLinter: "some-linter",
+					Text:       "some-analyzer: failure message",
+				},
+			},
+			prepare: func(m *MockedIDiagnostic) {
+				d := &Diagnostic{
+					Diagnostic: analysis.Diagnostic{
+						Message: "failure message",
+						SuggestedFixes: []analysis.SuggestedFix{
+							{
+								Message: "fix something",
+								TextEdits: []analysis.TextEdit{
+									{
+										Pos:     101,
+										End:     151,
+										NewText: []byte("// Some comment to fix\n"),
+									},
+								},
+							},
+						},
+					},
+					Analyzer: &analysis.Analyzer{
+						Name: "some-analyzer",
+					},
+					Position: token.Position{},
+					Pkg:      nil,
+				}
+				m.On("fields").Return(d)
+				m.On("getPositionOf", posEquals(101)).Return(token.Position{Line: 5, Column: 1})
+				m.On("getPositionOf", posEquals(151)).Return(token.Position{Line: 5, Column: 10})
+			},
+		},
 		// TODO: TDD 1 suggested fix, no text edits!
 	}
 	for _, tt := range tests {
