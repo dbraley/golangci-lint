@@ -236,60 +236,56 @@ func buildIssues(diags []Diagnostic, linterNameBuilder func(diag *Diagnostic) st
 	var issues []result.Issue
 	for i := range diags {
 		diag := &diags[i]
-		issues = append(issues, getIssuesForDiagnostic(diag, linterNameBuilder(diag))...)
+		issues = append(issues, buildSingleIssue(diag, linterNameBuilder(diag)))
 	}
 	return issues
 }
 
-func getIssuesForDiagnostic(diag iDiagnostic, linterName string) (issues []result.Issue) {
+func buildSingleIssue(diag iDiagnostic, linterName string) result.Issue {
 	text := generateIssueText(diag, linterName)
+	issue := result.Issue{
+		FromLinter: linterName,
+		Text:       text,
+		Pos:        diag.fields().Position,
+		Pkg:        diag.fields().Pkg,
+	}
 
 	if len(diag.fields().SuggestedFixes) > 0 {
 		// Don't really have a better way of picking a best fix right now
 		chosenFix := diag.fields().SuggestedFixes[0]
 
-		// TODO: Should we log.info the chosenFix.Message?
+		// It could be confusing to return more than one issue per single diagnostic,
+		// but if we return a subset it might be a partial application of a fix. Don't
+		// apply a fix unless there is only one for now
+		if len(chosenFix.TextEdits) == 1 {
+			edit := chosenFix.TextEdits[0]
 
-		// Should result in one or more issue for each text edit, as
-		// fixer.go only applies one fix per issue
-		for _, edit := range chosenFix.TextEdits {
-			oPos := diag.getPositionOf(edit.Pos)
-			oEnd := diag.getPositionOf(edit.End)
+			pos := diag.getPositionOf(edit.Pos)
+			end := diag.getPositionOf(edit.End)
 
 			newLines := strings.Split(string(edit.NewText), "\n")
 
 			// This only works if we're only replacing whole lines with brand new lines
-			if onlyReplacesWholeLines(oPos, oEnd, newLines) {
+			if onlyReplacesWholeLines(pos, end, newLines) {
 
 				// both original and new content ends with newline, omit to avoid partial line replacement
 				newLines = newLines[:len(newLines)-1]
 
-				issue := createBasicIssue(linterName, text, diag)
 				issue.Replacement = &result.Replacement{NewLines: newLines}
-				issue.LineRange = &result.Range{From: oPos.Line, To: oEnd.Line - 1}
-				issues = append(issues, issue)
+				issue.LineRange = &result.Range{From: pos.Line, To: end.Line - 1}
+
+				return issue
 			}
 		}
 	}
-	if len(issues) == 0 {
-		issues = append(issues, createBasicIssue(linterName, text, diag))
-	}
-	return issues
+
+	return issue
 }
 
 func onlyReplacesWholeLines(oPos token.Position, oEnd token.Position, newLines []string) bool {
 	return oPos.Column == 1 && oEnd.Column == 1 &&
 		oPos.Line < oEnd.Line && // must be replacing at least one line
 		newLines[len(newLines)-1] == "" // edit.NewText ended with '\n'
-}
-
-func createBasicIssue(linterName string, text string, diag iDiagnostic) result.Issue {
-	return result.Issue{
-		FromLinter: linterName,
-		Text:       text,
-		Pos:        diag.fields().Position,
-		Pkg:        diag.fields().Pkg,
-	}
 }
 
 func generateIssueText(diag iDiagnostic, linterName string) string {

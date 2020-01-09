@@ -130,15 +130,15 @@ func posEquals(expected token.Pos) interface{} {
 	})
 }
 
-func Test_getIssuesForDiagnostic(t *testing.T) {
+func Test_buildSingleIssue(t *testing.T) {
 	type args struct {
 		diag       iDiagnostic
 		linterName string
 	}
 	tests := []struct {
-		name       string
-		args       args
-		wantIssues []result.Issue
+		name      string
+		args      args
+		wantIssue result.Issue
 
 		prepare func(m *MockedIDiagnostic)
 	}{
@@ -158,11 +158,9 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 
 				linterName: "some-linter",
 			},
-			wantIssues: []result.Issue{
-				{
-					FromLinter: "some-linter",
-					Text:       "failure message",
-				},
+			wantIssue: result.Issue{
+				FromLinter: "some-linter",
+				Text:       "failure message",
 			},
 		},
 		{
@@ -180,11 +178,9 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 				},
 				linterName: "some-linter",
 			},
-			wantIssues: []result.Issue{
-				{
-					FromLinter: "some-linter",
-					Text:       "some-analyzer: failure message",
-				},
+			wantIssue: result.Issue{
+				FromLinter: "some-linter",
+				Text:       "some-analyzer: failure message",
 			},
 		},
 		{
@@ -208,11 +204,9 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 				},
 				linterName: "some-linter",
 			},
-			wantIssues: []result.Issue{
-				{
-					FromLinter: "some-linter",
-					Text:       "some-analyzer: failure message",
-				},
+			wantIssue: result.Issue{
+				FromLinter: "some-linter",
+				Text:       "some-analyzer: failure message",
 			},
 		},
 		{
@@ -221,19 +215,17 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 				diag:       &MockedIDiagnostic{},
 				linterName: "some-linter",
 			},
-			wantIssues: []result.Issue{
-				{
-					FromLinter: "some-linter",
-					Text:       "some-analyzer: failure message",
-					LineRange: &result.Range{
-						From: 5,
-						To:   5,
-					},
-					Replacement: &result.Replacement{
-						NeedOnlyDelete: false,
-						NewLines: []string{
-							"// Some comment to fix",
-						},
+			wantIssue: result.Issue{
+				FromLinter: "some-linter",
+				Text:       "some-analyzer: failure message",
+				LineRange: &result.Range{
+					From: 5,
+					To:   5,
+				},
+				Replacement: &result.Replacement{
+					NeedOnlyDelete: false,
+					NewLines: []string{
+						"// Some comment to fix",
 					},
 				},
 			},
@@ -271,11 +263,9 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 				diag:       &MockedIDiagnostic{},
 				linterName: "some-linter",
 			},
-			wantIssues: []result.Issue{
-				{
-					FromLinter: "some-linter",
-					Text:       "some-analyzer: failure message",
-				},
+			wantIssue: result.Issue{
+				FromLinter: "some-linter",
+				Text:       "some-analyzer: failure message",
 			},
 			prepare: func(m *MockedIDiagnostic) {
 				d := &Diagnostic{
@@ -313,8 +303,8 @@ func Test_getIssuesForDiagnostic(t *testing.T) {
 				tt.prepare(diagnostic)
 			}
 
-			if gotIssues := getIssuesForDiagnostic(tt.args.diag, tt.args.linterName); !reflect.DeepEqual(gotIssues, tt.wantIssues) {
-				t.Errorf("getIssuesForDiagnostic() = %v, want %v", gotIssues, tt.wantIssues)
+			if gotIssues := buildSingleIssue(tt.args.diag, tt.args.linterName); !reflect.DeepEqual(gotIssues, tt.wantIssue) {
+				t.Errorf("buildSingleIssue() = %v, want %v", gotIssues, tt.wantIssue)
 			}
 		})
 	}
