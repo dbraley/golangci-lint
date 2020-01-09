@@ -219,19 +219,6 @@ func buildIssuesFromErrorsForTypecheckMode(errs []error, lintCtx *linter.Context
 	return issues, nil
 }
 
-type iDiagnostic interface {
-	fields() *Diagnostic
-	getPositionOf(token.Pos) token.Position
-}
-
-func (d *Diagnostic) fields() *Diagnostic {
-	return d
-}
-
-func (d *Diagnostic) getPositionOf(p token.Pos) token.Position {
-	return d.Pkg.Fset.Position(p)
-}
-
 func buildIssues(diags []Diagnostic, linterNameBuilder func(diag *Diagnostic) string) []result.Issue {
 	var issues []result.Issue
 	for i := range diags {
@@ -241,18 +228,18 @@ func buildIssues(diags []Diagnostic, linterNameBuilder func(diag *Diagnostic) st
 	return issues
 }
 
-func buildSingleIssue(diag iDiagnostic, linterName string) result.Issue {
+func buildSingleIssue(diag *Diagnostic, linterName string) result.Issue {
 	text := generateIssueText(diag, linterName)
 	issue := result.Issue{
 		FromLinter: linterName,
 		Text:       text,
-		Pos:        diag.fields().Position,
-		Pkg:        diag.fields().Pkg,
+		Pos:        diag.Position,
+		Pkg:        diag.Pkg,
 	}
 
-	if len(diag.fields().SuggestedFixes) > 0 {
+	if len(diag.SuggestedFixes) > 0 {
 		// Don't really have a better way of picking a best fix right now
-		chosenFix := diag.fields().SuggestedFixes[0]
+		chosenFix := diag.SuggestedFixes[0]
 
 		// It could be confusing to return more than one issue per single diagnostic,
 		// but if we return a subset it might be a partial application of a fix. Don't
@@ -260,8 +247,8 @@ func buildSingleIssue(diag iDiagnostic, linterName string) result.Issue {
 		if len(chosenFix.TextEdits) == 1 {
 			edit := chosenFix.TextEdits[0]
 
-			pos := diag.getPositionOf(edit.Pos)
-			end := diag.getPositionOf(edit.End)
+			pos := diag.Pkg.Fset.Position(edit.Pos)
+			end := diag.Pkg.Fset.Position(edit.End)
 
 			newLines := strings.Split(string(edit.NewText), "\n")
 
@@ -288,11 +275,11 @@ func onlyReplacesWholeLines(oPos token.Position, oEnd token.Position, newLines [
 		newLines[len(newLines)-1] == "" // edit.NewText ended with '\n'
 }
 
-func generateIssueText(diag iDiagnostic, linterName string) string {
-	if diag.fields().Analyzer.Name == linterName {
-		return diag.fields().Message
+func generateIssueText(diag *Diagnostic, linterName string) string {
+	if diag.Analyzer.Name == linterName {
+		return diag.Message
 	}
-	return fmt.Sprintf("%s: %s", diag.fields().Analyzer.Name, diag.fields().Message)
+	return fmt.Sprintf("%s: %s", diag.Analyzer.Name, diag.Message)
 }
 
 func (lnt *Linter) preRun(lintCtx *linter.Context) error {

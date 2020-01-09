@@ -2,7 +2,6 @@ package goanalysis
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/mock"
 	"go/token"
 	"reflect"
 	"testing"
@@ -109,38 +108,18 @@ func Test_buildIssues(t *testing.T) {
 	}
 }
 
-type MockedIDiagnostic struct {
-	mock.Mock
-}
-
-func (m *MockedIDiagnostic) fields() *Diagnostic {
-	args := m.Called()
-	return args.Get(0).(*Diagnostic)
-}
-
-func (m *MockedIDiagnostic) getPositionOf(p token.Pos) token.Position {
-	args := m.Called(p)
-	return args.Get(0).(token.Position)
-
-}
-
-func posEquals(expected token.Pos) interface{} {
-	return mock.MatchedBy(func(pos token.Pos) bool {
-		return pos == expected
-	})
-}
-
 func Test_buildSingleIssue(t *testing.T) {
 	type args struct {
-		diag       iDiagnostic
+		diag       *Diagnostic
 		linterName string
+	}
+	fakePkg := packages.Package{
+		Fset: makeFakeFileSet(),
 	}
 	tests := []struct {
 		name      string
 		args      args
 		wantIssue result.Issue
-
-		prepare func(m *MockedIDiagnostic)
 	}{
 		{
 			name: "Linter Name is Analyzer Name",
@@ -212,25 +191,7 @@ func Test_buildSingleIssue(t *testing.T) {
 		{
 			name: "Replace Whole Line",
 			args: args{
-				diag:       &MockedIDiagnostic{},
-				linterName: "some-linter",
-			},
-			wantIssue: result.Issue{
-				FromLinter: "some-linter",
-				Text:       "some-analyzer: failure message",
-				LineRange: &result.Range{
-					From: 5,
-					To:   5,
-				},
-				Replacement: &result.Replacement{
-					NeedOnlyDelete: false,
-					NewLines: []string{
-						"// Some comment to fix",
-					},
-				},
-			},
-			prepare: func(m *MockedIDiagnostic) {
-				d := &Diagnostic{
+				diag: &Diagnostic{
 					Diagnostic: analysis.Diagnostic{
 						Message: "failure message",
 						SuggestedFixes: []analysis.SuggestedFix{
@@ -250,25 +211,30 @@ func Test_buildSingleIssue(t *testing.T) {
 						Name: "some-analyzer",
 					},
 					Position: token.Position{},
-					Pkg:      nil,
-				}
-				m.On("fields").Return(d)
-				m.On("getPositionOf", posEquals(101)).Return(token.Position{Line: 5, Column: 1})
-				m.On("getPositionOf", posEquals(201)).Return(token.Position{Line: 6, Column: 1})
-			},
-		},
-		{
-			name: "Excludes Replacement if TextEdit doesn't modify only whole lines",
-			args: args{
-				diag:       &MockedIDiagnostic{},
+					Pkg:      &fakePkg,
+				},
 				linterName: "some-linter",
 			},
 			wantIssue: result.Issue{
 				FromLinter: "some-linter",
 				Text:       "some-analyzer: failure message",
+				LineRange: &result.Range{
+					From: 2,
+					To:   2,
+				},
+				Replacement: &result.Replacement{
+					NeedOnlyDelete: false,
+					NewLines: []string{
+						"// Some comment to fix",
+					},
+				},
+				Pkg: &fakePkg,
 			},
-			prepare: func(m *MockedIDiagnostic) {
-				d := &Diagnostic{
+		},
+		{
+			name: "Excludes Replacement if TextEdit doesn't modify only whole lines",
+			args: args{
+				diag: &Diagnostic{
 					Diagnostic: analysis.Diagnostic{
 						Message: "failure message",
 						SuggestedFixes: []analysis.SuggestedFix{
@@ -288,24 +254,31 @@ func Test_buildSingleIssue(t *testing.T) {
 						Name: "some-analyzer",
 					},
 					Position: token.Position{},
-					Pkg:      nil,
-				}
-				m.On("fields").Return(d)
-				m.On("getPositionOf", posEquals(101)).Return(token.Position{Line: 5, Column: 1})
-				m.On("getPositionOf", posEquals(151)).Return(token.Position{Line: 5, Column: 10})
+					Pkg:      &fakePkg,
+				},
+				linterName: "some-linter",
+			},
+			wantIssue: result.Issue{
+				FromLinter: "some-linter",
+				Text:       "some-analyzer: failure message",
+				Pkg:        &fakePkg,
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// if using a mock diagnostic, prepare it
-			if diagnostic, ok := tt.args.diag.(*MockedIDiagnostic); ok {
-				tt.prepare(diagnostic)
-			}
-
 			if gotIssues := buildSingleIssue(tt.args.diag, tt.args.linterName); !reflect.DeepEqual(gotIssues, tt.wantIssue) {
 				t.Errorf("buildSingleIssue() = %v, want %v", gotIssues, tt.wantIssue)
 			}
 		})
 	}
+}
+
+func makeFakeFileSet() *token.FileSet {
+	fSet := token.NewFileSet()
+	file := fSet.AddFile("fake.go", 1, 1000)
+	for i := 100; i < 1000; i += 100 {
+		file.AddLine(i)
+	}
+	return fSet
 }
